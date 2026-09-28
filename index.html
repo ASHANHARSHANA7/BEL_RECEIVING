@@ -72,6 +72,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
 <div id="inst" class="hide"><div><b>Install BEL Receiving</b><br><small>Add this app to your device</small></div>
 <button class="btn g s" onclick="inst.classList.add('hide')">Later</button><button class="btn s" id="ibtn">Install</button></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -86,6 +87,11 @@ try{setTheme(localStorage.getItem('th')||'able')}catch(e){setTheme('able')}
 db.ref('settings/theme').on('value',s=>{if(s.val()&&TH[s.val()]){setTheme(s.val());render()}},()=>{});
 document.querySelectorAll('.logo').forEach(i=>i.src=LOGO);
 ['icon','apple-touch-icon'].forEach(r=>{const l=document.createElement('link');l.rel=r;l.href=LOGO;document.head.appendChild(l)});
+function rowsOf(k,onlyPending){return arr(k).filter(r=>!onlyPending||r.status!=='sorted').sort((a,b)=>a.ts-b.ts).map(r=>{const o={'Added On':new Date(r.ts).toLocaleString()};M[k].f.forEach(([n,l,t])=>{if(t!='photo')o[l]=(t=='number'&&r[n]!==''&&r[n]!=null)?+r[n]:(r[n]??'')});o.Status=r.status=='sorted'?'Sorted':'Pending';o['Added By']=(r.by||'').replace('@bel-receiving.app','');return o})}
+const sheet=rows=>XLSX.utils.json_to_sheet(rows.length?rows:[{'Info':'No records'}]);
+const stamp=()=>new Date().toISOString().slice(0,10);
+function exportOne(k){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,sheet(rowsOf(k,false)),M[k].t.slice(0,31));XLSX.writeFile(wb,`BEL_${M[k].t.replace(/[^A-Za-z0-9]+/g,'_')}_${stamp()}.xlsx`)}
+function exportAll(){const wb=XLSX.utils.book_new();Object.keys(M).forEach(k=>XLSX.utils.book_append_sheet(wb,sheet(rowsOf(k,true)),M[k].t.slice(0,31)));XLSX.writeFile(wb,`BEL_Master_Pending_${stamp()}.xlsx`)}
 function themeCard(){const c=document.documentElement.dataset.t;return `<div class="card"><h3>🎨 Theme (changes for all users)</h3><div class="act">${Object.keys(TH).map(t=>`<button class="btn ${c==t?'':'g'} s" onclick="db.ref('settings/theme').set('${t}')">${TH[t]}</button>`).join('')}</div></div>`}
 const $=id=>document.getElementById(id);
 const ADMIN_EMAIL='indika_advantis@bel-receiving.app'; // create this user in Firebase Auth
@@ -93,8 +99,8 @@ const toEmail=u=>{u=u.trim().toLowerCase();return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.t
 const M={
 grn:{t:'GRN Invoices Pending',f:[['date','Entry Date','date',1],['inv','GRN / Invoice No','text'],['n','No. of Invoices','number',1]]},
 inv:{t:'Invoices Sticker Pending',f:[['kind','Type','select:SFC,Checking',1],['inv','Invoice No','text'],['n','No. of Invoice Stickers','number',1],['date','Date','date']]},
-bay:{t:'Bay & R15 Pending Goods',f:[['loc','Location','select:Bay,R15',1],['date','Unloaded Date','date',1],['boxes','Boxes','number'],['rolls','Fabric Rolls','number'],['photo','Photo (optional)','photo']]},
-short:{t:'Unloading Shortages',adminOnly:1,f:[['no','Entry No','text'],['boxes','No. of Boxes','number'],['color','Color','text'],['photo','Photo','photo']]},
+bay:{t:'Bay & R15 Pending Goods',f:[['loc','Location','select:Bay,R15',1],['date','Unloaded Date','date',1],['po','PO Number','text'],['boxes','Boxes','number'],['rolls','Fabric Rolls','number'],['photo','Photo (optional)','photo'],['remark','Supervisor Remark','textarea']]},
+short:{t:'Unloading Discrepancy',adminOnly:1,f:[['date','Date','date'],['supplier','Supplier','text'],['sup','Unloading Supervisor','text'],['reason','Reason','text'],['qty','Qty','number'],['photo','Photo','photo'],['remark','Remark','textarea']]},
 chk:{t:'Checking Pending',f:[['date','Date','date',1],['ref','Reference','text'],['n','Count','number']]},
 hold:{t:'Unloading Hold',f:[['veh','Vehicle No','text',1],['remark','Remark','textarea']]}
 };
@@ -123,7 +129,7 @@ const g={};pend('grn').forEach(r=>g[r.date]=(g[r.date]||0)+num(r.n));
 const inv=pend('inv'),sum=(a,f)=>a.reduce((s,r)=>s+num(r[f]),0);
 const sf=sum(inv.filter(r=>r.kind=='SFC'),'n'),ck=sum(inv.filter(r=>r.kind=='Checking'),'n');
 const bay=pend('bay'),loc=l=>bay.filter(r=>r.loc==l);
-return `<div class="grid">${Object.keys(M).map((k,i)=>`<div class="st" style="--c:${COL[i]}" onclick="go('${k}')"><b>${pend(k).length}</b><span>${M[k].t}</span></div>`).join('')}</div>
+return `<div class="bar"><button class="btn" onclick="exportAll()">⬇ Master Excel – All Pending</button></div><div class="grid">${Object.keys(M).map((k,i)=>`<div class="st" style="--c:${COL[i]}" onclick="go('${k}')"><b>${pend(k).length}</b><span>${M[k].t}</span></div>`).join('')}</div>
 <div class="card"><h3>GRN invoices pending by entry date</h3>${Object.keys(g).length?`<table><tr><th>Entry Date</th><th>Invoices</th></tr>${Object.keys(g).sort().map(d=>`<tr><td>${esc(d)}</td><td><b>${g[d]}</b></td></tr>`).join('')}<tr><td><b>Total</b></td><td><b>${sum(pend('grn'),'n')}</b></td></tr></table>`:'<div class="empty">No pending GRN invoices</div>'}</div>
 <div class="grid"><div class="st" style="--c:#f59e0b"><b>${sf}</b><span>SFC invoice stickers pending</span></div><div class="st" style="--c:#ef4444"><b>${ck}</b><span>Checking invoice stickers pending</span></div></div>
 <div class="card"><h3>Bay &amp; R15 pending goods</h3><table><tr><th>Location</th><th>Entries</th><th>Boxes</th><th>Fabric Rolls</th></tr>${['Bay','R15'].map(l=>`<tr><td>${l}</td><td>${loc(l).length}</td><td>${sum(loc(l),'boxes')}</td><td>${sum(loc(l),'rolls')}</td></tr>`).join('')}</table></div>${isAdmin?themeCard():''}`}
@@ -131,7 +137,7 @@ return `<div class="grid">${Object.keys(M).map((k,i)=>`<div class="st" style="--
 function list(k){const m=M[k];let rows=arr(k).filter(r=>showSorted?r.status==='sorted':r.status!=='sorted').sort((a,b)=>b.ts-a.ts);
 return `<div class="bar"><button class="btn" onclick="openForm('${k}')">+ Add</button>
 <button class="btn g" onclick="showSorted=!showSorted;render()">${showSorted?'Show Pending':'Show Sorted'}</button>
-<span class="sp"></span><small>${rows.length} ${showSorted?'sorted':'pending'}</small></div>`+
+<button class="btn g" onclick="exportOne('${k}')">⬇ Excel (with status)</button><span class="sp"></span><small>${rows.length} ${showSorted?'sorted':'pending'}</small></div>`+
 (rows.length?rows.map(r=>rec(k,r)).join(''):`<div class="empty">Nothing ${showSorted?'sorted':'pending'}</div>`)}
 function rec(k,r){const m=M[k],can=isAdmin||!m.adminOnly;
 return `<div class="rec">${r.photo?`<img src="${r.photo}" onclick="zoom(this.src)">`:''}<div class="kv">${m.f.filter(f=>f[2]!='photo').map(f=>`<div><small>${f[1]}</small>${esc(r[f[0]])||'-'}</div>`).join('')}<div><small>Status</small><span class="bd ${r.status=='sorted'?'o':'p'}">${r.status=='sorted'?'Sorted':'Pending'}</span></div><div><small>By</small>${esc((r.by||'').replace('@bel-receiving.app',''))}</div></div>
