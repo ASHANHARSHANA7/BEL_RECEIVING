@@ -87,7 +87,7 @@ try{setTheme(localStorage.getItem('th')||'able')}catch(e){setTheme('able')}
 db.ref('settings/theme').on('value',s=>{if(s.val()&&TH[s.val()]){setTheme(s.val());render()}},()=>{});
 document.querySelectorAll('.logo').forEach(i=>i.src=LOGO);
 ['icon','apple-touch-icon'].forEach(r=>{const l=document.createElement('link');l.rel=r;l.href=LOGO;document.head.appendChild(l)});
-function rowsOf(k,onlyPending){return arr(k).filter(r=>!onlyPending||r.status!=='sorted').sort((a,b)=>a.ts-b.ts).map(r=>{const o={'Added On':new Date(r.ts).toLocaleString()};M[k].f.forEach(([n,l,t])=>{if(t!='photo')o[l]=(t=='number'&&r[n]!==''&&r[n]!=null)?+r[n]:(r[n]??'')});o.Status=r.status=='sorted'?'Sorted':'Pending';o['Added By']=(r.by||'').replace('@bel-receiving.app','');return o})}
+function rowsOf(k,onlyPending){return arr(k).filter(r=>!onlyPending||r.status!=='sorted').sort((a,b)=>a.ts-b.ts).map(r=>{const o={'Added On':new Date(r.ts).toLocaleString()};M[k].f.forEach(([n,l,t])=>{if(t!='photo')o[l]=(t=='number'&&r[n]!==''&&r[n]!=null)?+r[n]:(r[n]??'')});o.Status=r.status=='sorted'?'Sorted':'Pending';o['Sorted By']=r.sortedBy||'';o['Added By']=(r.by||'').replace('@bel-receiving.app','');return o})}
 const sheet=rows=>XLSX.utils.json_to_sheet(rows.length?rows:[{'Info':'No records'}]);
 const stamp=()=>new Date().toISOString().slice(0,10);
 function exportOne(k){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,sheet(rowsOf(k,false)),M[k].t.slice(0,31));XLSX.writeFile(wb,`BEL_${M[k].t.replace(/[^A-Za-z0-9]+/g,'_')}_${stamp()}.xlsx`)}
@@ -104,7 +104,8 @@ short:{t:'Unloading Discrepancy',adminOnly:1,f:[['date','Date','date'],['supplie
 chk:{t:'Checking Pending',f:[['date','Date','date',1],['ref','Reference','text'],['n','Count','number']]},
 hold:{t:'Unloading Hold',f:[['veh','Vehicle No','text',1],['remark','Remark','textarea']]}
 };
-let user=null,isAdmin=false,D={},page='dash',showSorted=false,photo='',editing=null;
+let user=null,isAdmin=false,D={},page='dash',showSorted=false,photos=[],editing=null;
+const photosOf=r=>Array.isArray(r.photo)?r.photo:(r.photo?[r.photo]:[]);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const arr=k=>Object.entries(D[k]||{}).map(([id,v])=>({id,...v}));
 const pend=k=>arr(k).filter(r=>r.status!=='sorted');
@@ -139,27 +140,31 @@ return `<div class="bar"><button class="btn" onclick="openForm('${k}')">+ Add</b
 <button class="btn g" onclick="showSorted=!showSorted;render()">${showSorted?'Show Pending':'Show Sorted'}</button>
 <button class="btn g" onclick="exportOne('${k}')">⬇ Excel (with status)</button><span class="sp"></span><small>${rows.length} ${showSorted?'sorted':'pending'}</small></div>`+
 (rows.length?rows.map(r=>rec(k,r)).join(''):`<div class="empty">Nothing ${showSorted?'sorted':'pending'}</div>`)}
-function rec(k,r){const m=M[k],can=isAdmin||!m.adminOnly;
-return `<div class="rec">${r.photo?`<img src="${r.photo}" onclick="zoom(this.src)">`:''}<div class="kv">${m.f.filter(f=>f[2]!='photo').map(f=>`<div><small>${f[1]}</small>${esc(r[f[0]])||'-'}</div>`).join('')}<div><small>Status</small><span class="bd ${r.status=='sorted'?'o':'p'}">${r.status=='sorted'?'Sorted':'Pending'}</span></div><div><small>By</small>${esc((r.by||'').replace('@bel-receiving.app',''))}</div></div>
-<div class="act">${can?`<button class="btn g s" onclick="toggle('${k}','${r.id}')">${r.status=='sorted'?'Reopen':'Mark Sorted'}</button><button class="btn g s" onclick="openForm('${k}','${r.id}')">Edit</button>`:''}${isAdmin?`<button class="btn r s" onclick="del('${k}','${r.id}')">Delete</button>`:''}</div></div>`}
+function rec(k,r){const m=M[k],isOwner=r.by===user.email,canEdit=isAdmin||(!m.adminOnly&&isOwner),canSort=isAdmin||(!m.adminOnly&&isOwner),pics=photosOf(r);
+return `<div class="rec">${pics.map(p=>`<img src="${p}" onclick="zoom('${p}')">`).join('')}<div class="kv">${m.f.filter(f=>f[2]!='photo').map(f=>`<div><small>${f[1]}</small>${esc(r[f[0]])||'-'}</div>`).join('')}<div><small>Status</small><span class="bd ${r.status=='sorted'?'o':'p'}">${r.status=='sorted'?'Sorted by '+esc(r.sortedBy||''):'Pending'}</span></div><div><small>Added By</small>${esc((r.by||'').replace('@bel-receiving.app',''))}</div></div>
+<div class="act">${canSort?`<button class="btn g s" onclick="toggle('${k}','${r.id}')">${r.status=='sorted'?'Reopen':'Mark Sorted'}</button>`:''}${canEdit?`<button class="btn g s" onclick="openForm('${k}','${r.id}')">Edit</button>`:''}${isAdmin?`<button class="btn r s" onclick="del('${k}','${r.id}')">Delete</button>`:''}</div></div>`}
 // Shortages: users may add entries; only admin can edit / sort / delete. Others: users may delete too.
-function toggle(k,id){const r=D[k][id];db.ref(`data/${k}/${id}/status`).set(r.status=='sorted'?'pending':'sorted')}
+function toggle(k,id){const r=D[k][id];
+if(r.status=='sorted'){db.ref(`data/${k}/${id}`).update({status:'pending',sortedBy:null});return}
+const name=prompt('Sorted by (enter name):','');if(name===null)return;
+db.ref(`data/${k}/${id}`).update({status:'sorted',sortedBy:name.trim()||user.email.replace('@bel-receiving.app','')})}
 function del(k,id){if(confirm('Delete this entry?'))db.ref(`data/${k}/${id}`).remove()}
 function zoom(s){const d=document.createElement('div');d.className='modal';d.onclick=()=>d.remove();d.innerHTML=`<img src="${s}" style="max-width:100%;max-height:90vh;border-radius:10px">`;document.body.appendChild(d)}
 
-function openForm(k,id){photo='';editing={k,id};const r=id?D[k][id]:{};if(r.photo)photo=r.photo;
+function openForm(k,id){photos=[];editing={k,id};const r=id?D[k][id]:{};if(r)photos=photosOf(r).slice();
 const f=M[k].f.map(([n,l,t,req])=>{let i;
-if(t=='photo')i=`<div class="act"><label class="btn g s" style="display:inline-block;margin:0;cursor:pointer">📷 Camera<input type="file" accept="image/*" capture="environment" hidden onchange="pick(this)"></label><label class="btn g s" style="display:inline-block;margin:0;cursor:pointer">🖼 Upload<input type="file" accept="image/*" hidden onchange="pick(this)"></label></div><div id="pv">${photo?`<img src="${photo}" style="width:80px;margin-top:6px;border-radius:8px">`:''}</div>`;
+if(t=='photo')i=`<div class="act"><label class="btn g s" style="display:inline-block;margin:0;cursor:pointer">📷 Camera<input type="file" accept="image/*" capture="environment" hidden onchange="pick(this)"></label><label class="btn g s" style="display:inline-block;margin:0;cursor:pointer">🖼 Add Photo<input type="file" accept="image/*" hidden onchange="pick(this)"></label></div><div id="pv" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>`;
 else if(t.startsWith('select'))i=`<select id="f_${n}">${t.slice(7).split(',').map(o=>`<option ${r[n]==o?'selected':''}>${o}</option>`).join('')}</select>`;
 else if(t=='textarea')i=`<textarea id="f_${n}" rows="3">${esc(r[n])}</textarea>`;
 else i=`<input id="f_${n}" type="${t}" ${req?'required':''} value="${esc(r[n]||(t=='date'&&!id?new Date().toISOString().slice(0,10):''))}">`;
 return `<label>${l}${req?' *':''}</label>${i}`}).join('');
 const d=document.createElement('div');d.className='modal';d.id='mod';
 d.innerHTML=`<form class="mbox" onsubmit="return save(event)"><h3 style="margin-bottom:6px">${id?'Edit':'Add'} – ${M[k].t}</h3>${f}<div class="bar" style="margin:18px 0 0"><button class="btn">Save</button><button type="button" class="btn g" onclick="mod.remove()">Cancel</button></div></form>`;
-document.body.appendChild(d)}
-function pick(el){const f=el.files[0];if(!f)return;const im=new Image();im.onload=()=>{const s=Math.min(1,700/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*s;c.height=im.height*s;c.getContext('2d').drawImage(im,0,0,c.width,c.height);photo=c.toDataURL('image/jpeg',.6);$('pv').innerHTML=`<img src="${photo}" style="width:80px;margin-top:6px;border-radius:8px">`};im.src=URL.createObjectURL(f)}
+document.body.appendChild(d);renderPv()}
+function pick(el){const f=el.files[0];if(!f)return;const im=new Image();im.onload=()=>{const s=Math.min(1,700/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*s;c.height=im.height*s;c.getContext('2d').drawImage(im,0,0,c.width,c.height);photos.push(c.toDataURL('image/jpeg',.6));renderPv();el.value=''};im.src=URL.createObjectURL(f)}
+function renderPv(){const p=$('pv');if(!p)return;p.innerHTML=photos.map((p2,i)=>`<div style="position:relative"><img src="${p2}" style="width:70px;height:70px;object-fit:cover;border-radius:8px"><button type="button" onclick="photos.splice(${i},1);renderPv()" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:0;background:#ef4444;color:#fff;font-weight:700;cursor:pointer">×</button></div>`).join('')}
 async function save(e){e.preventDefault();const {k,id}=editing,o={};
-M[k].f.forEach(([n,,t])=>{o[n]=t=='photo'?photo:($('f_'+n).value||'')});
+M[k].f.forEach(([n,,t])=>{o[n]=t=='photo'?photos.slice():($('f_'+n).value||'')});
 try{if(id)await db.ref(`data/${k}/${id}`).update(o);else await db.ref(`data/${k}`).push({...o,status:'pending',by:user.email,ts:Date.now()});$('mod').remove()}
 catch(x){alert('Save failed: '+x.message)}return false}
 
