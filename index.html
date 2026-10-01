@@ -103,7 +103,8 @@ inv:{t:'Invoices Sticker Pending',f:[['kind','Type','select:SFC,Checking',1],['i
 bay:{t:'Bay & R15 Pending Goods',f:[['loc','Location','select:Bay,R15',1],['date','Unloaded Date','date',1],['entry','Entry Number','text'],['po','PO Number','text'],['boxes','Boxes','number'],['rolls','Fabric Rolls','number'],['photo','Photo (optional)','photo'],['remark','Supervisor Remark','textarea']]},
 short:{t:'Unloading Discrepancy',adminOnly:1,f:[['date','Date','date'],['entry','Entry Number','text'],['supplier','Supplier','supplier'],['sup','Unloading Supervisor','text'],['reason','Reason','text'],['qty','Qty','number'],['photo','Photo','photo'],['remark','Remark','textarea']]},
 chk:{t:'Checking Pending',f:[['date','Date','date',1],['ref','Reference','text'],['n','Count','number']]},
-hold:{t:'Unloading Hold',f:[['veh','Vehicle No','text',1],['remark','Remark','textarea']]}
+hold:{t:'Unloading Hold',f:[['veh','Vehicle No','text',1],['remark','Remark','textarea']]},
+complaint:{t:'App / Issue Complaints',f:[['date','Date','date',1],['location','Location / Issue Area','text'],['remark','Complaint / Remark','textarea',1],['photo','Photo (optional)','photo']]}
 };
 let user=null,isAdmin=false,D={},page='dash',showSorted=false,photos=[],editing=null;
 const photosOf=r=>Array.isArray(r.photo)?r.photo:(r.photo?[r.photo]:[]);
